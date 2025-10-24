@@ -1,0 +1,12 @@
+# This is an example configuration file.
+#
+# 1. Rename this file to `config.py`.
+# 2. Replace the placeholder values with your actual Firebase project credentials.
+
+# Your Firebase project's Web API Key.
+# Found in: Project settings > General > Your apps > Web API Key
+API_KEY = "YOUR_WEB_API_KEY"
+
+# Your Firebase Project ID.
+# Found in: Project settings > General > Project ID
+PROJECT_ID = "YOUR_PROJECT_ID"
