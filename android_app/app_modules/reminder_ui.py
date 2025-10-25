@@ -9,7 +9,8 @@ from kivy.uix.recycleboxlayout import RecycleBoxLayout
 from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.recycleview.layout import LayoutSelectionBehavior
 from . import firebase_service
-from . import notification_service
+from . import android_service
+import datetime
 
 class SelectableRecycleBoxLayout(FocusBehavior, LayoutSelectionBehavior,
                                  RecycleBoxLayout):
@@ -95,8 +96,8 @@ class ReminderUI(BoxLayout):
 
         success = firebase_service.add_reminder(self.id_token, self.user_id, title, description, reminder_time)
         if success:
-            self.status_label.text = "Reminder added!"
-            notification_service.schedule_reminder_notification(title, description, reminder_time)
+            self.status_label.text = "Reminder added and scheduled!"
+            android_service.schedule_notification(title, description, reminder_time)
             self.title_input.text = ""
             self.desc_input.text = ""
             self.time_input.text = ""
@@ -106,7 +107,7 @@ class ReminderUI(BoxLayout):
 
     def load_reminders(self):
         self.reminders_data = firebase_service.get_reminders(self.id_token, self.user_id)
-        self.layout.data = [{'text': f"{r['title']} - {r['reminder_time']}"} for r in self.reminders_data]
+        self.layout.data = [{'text': f"{r['title']} - {r['reminder_time'].replace('Z', '').replace('T', ' ')}"} for r in self.reminders_data]
 
     def delete_selected_reminder(self, instance):
         selected_nodes = self.layout.recycle_view.layout_manager.selected_nodes
@@ -120,6 +121,17 @@ class ReminderUI(BoxLayout):
 
         success = firebase_service.delete_reminder(self.id_token, self.user_id, reminder_id)
         if success:
+            # Cancel the associated notification
+            try:
+                # Firestore timestamp is in ISO 8601 format (e.g., '2024-10-24T03:01:47.519105Z')
+                # We need to parse it to get the original timestamp in milliseconds for the ID.
+                reminder_time_str = reminder_to_delete['reminder_time']
+                reminder_time_dt = datetime.datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
+                notification_id = int(reminder_time_dt.timestamp() * 1000) % 100000
+                android_service.cancel_notification(str(notification_id))
+            except Exception as e:
+                print(f"Could not cancel notification: {e}")
+
             self.status_label.text = "Reminder deleted."
             self.load_reminders()
         else:
