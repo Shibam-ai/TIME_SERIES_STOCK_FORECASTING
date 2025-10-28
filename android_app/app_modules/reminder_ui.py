@@ -10,6 +10,7 @@ from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.recycleview.layout import LayoutSelectionBehavior
 from . import firebase_service
 from . import android_service
+from .edit_view_ui import EditViewUI
 import datetime
 
 class SelectableRecycleBoxLayout(FocusBehavior, LayoutSelectionBehavior,
@@ -46,6 +47,14 @@ class ReminderUI(BoxLayout):
         self.id_token = id_token
         self.orientation = 'vertical'
         self.reminders_data = []
+        self.current_view = 'list' # Can be 'list' or 'edit'
+
+        self.draw_list_view()
+        self.load_reminders()
+
+    def draw_list_view(self):
+        self.clear_widgets()
+        self.current_view = 'list'
 
         # Form for adding new reminders
         form_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=200)
@@ -66,10 +75,16 @@ class ReminderUI(BoxLayout):
 
         self.add_widget(form_layout)
 
-        # Delete button
-        self.delete_button = Button(text="Delete Selected", size_hint_y=None, height=50)
+        # Action buttons
+        action_layout = BoxLayout(size_hint_y=None, height=50)
+        self.edit_button = Button(text="Edit Selected")
+        self.edit_button.bind(on_press=self.show_edit_view)
+        action_layout.add_widget(self.edit_button)
+
+        self.delete_button = Button(text="Delete Selected")
         self.delete_button.bind(on_press=self.delete_selected_reminder)
-        self.add_widget(self.delete_button)
+        action_layout.add_widget(self.delete_button)
+        self.add_widget(action_layout)
 
         # List to display reminders
         self.reminder_list = RecycleView()
@@ -79,7 +94,6 @@ class ReminderUI(BoxLayout):
         self.reminder_list.add_widget(self.layout)
 
         self.add_widget(self.reminder_list)
-        self.load_reminders()
 
         # Status label
         self.status_label = Label(text="", size_hint_y=None, height=40)
@@ -106,8 +120,9 @@ class ReminderUI(BoxLayout):
             self.status_label.text = "Failed to add reminder."
 
     def load_reminders(self):
-        self.reminders_data = firebase_service.get_reminders(self.id_token, self.user_id)
-        self.layout.data = [{'text': f"{r['title']} - {r['reminder_time'].replace('Z', '').replace('T', ' ')}"} for r in self.reminders_data]
+        if self.current_view == 'list':
+            self.reminders_data = firebase_service.get_reminders(self.id_token, self.user_id)
+            self.layout.data = [{'text': f"{r['title']} - {r['reminder_time'].replace('Z', '').replace('T', ' ')}"} for r in self.reminders_data]
 
     def delete_selected_reminder(self, instance):
         selected_nodes = self.layout.recycle_view.layout_manager.selected_nodes
@@ -121,10 +136,7 @@ class ReminderUI(BoxLayout):
 
         success = firebase_service.delete_reminder(self.id_token, self.user_id, reminder_id)
         if success:
-            # Cancel the associated notification
             try:
-                # Firestore timestamp is in ISO 8601 format (e.g., '2024-10-24T03:01:47.519105Z')
-                # We need to parse it to get the original timestamp in milliseconds for the ID.
                 reminder_time_str = reminder_to_delete['reminder_time']
                 reminder_time_dt = datetime.datetime.fromisoformat(reminder_time_str.replace('Z', '+00:00'))
                 notification_id = int(reminder_time_dt.timestamp() * 1000) % 100000
@@ -136,3 +148,59 @@ class ReminderUI(BoxLayout):
             self.load_reminders()
         else:
             self.status_label.text = "Failed to delete reminder."
+
+    def show_edit_view(self, instance):
+        selected_nodes = self.layout.recycle_view.layout_manager.selected_nodes
+        if not selected_nodes:
+            self.status_label.text = "Please select a reminder to edit."
+            return
+
+        node_index = selected_nodes[0]
+        reminder_to_edit = self.reminders_data[node_index]
+
+        self.clear_widgets()
+        self.current_view = 'edit'
+        edit_view = EditViewUI(item_data=reminder_to_edit, item_type='reminder')
+        edit_view.bind(on_save=self.save_edited_reminder)
+        edit_view.back_button.bind(on_press=lambda x: self.load_reminders() and self.draw_list_view())
+        self.add_widget(edit_view)
+
+    def save_edited_reminder(self, instance, updated_data):
+        selected_nodes = self.layout.recycle_view.layout_manager.selected_nodes
+        if not selected_nodes:
+            # This should not happen in the edit view, but as a safeguard
+            self.draw_list_view()
+            self.load_reminders()
+            return
+
+        node_index = selected_nodes[0]
+        original_reminder = self.reminders_data[node_index]
+        reminder_id = original_reminder['id']
+
+        # First, cancel the old notification
+        try:
+            old_time_str = original_reminder['reminder_time']
+            old_time_dt = datetime.datetime.fromisoformat(old_time_str.replace('Z', '+00:00'))
+            old_notification_id = int(old_time_dt.timestamp() * 1000) % 100000
+            android_service.cancel_notification(str(old_notification_id))
+        except Exception as e:
+            print(f"Could not cancel the old notification: {e}")
+
+        success = firebase_service.update_reminder(self.id_token, self.user_id, reminder_id, updated_data)
+
+        # Then, if the update was successful, schedule the new notification
+        if success:
+            try:
+                new_title = updated_data.get('title', '')
+                new_desc = updated_data.get('description', '')
+                new_time = updated_data.get('reminder_time', '')
+                android_service.schedule_notification(new_title, new_desc, new_time)
+            except Exception as e:
+                print(f"Could not schedule the new notification: {e}")
+        if success:
+            self.status_label.text = "Reminder updated."
+        else:
+            self.status_label.text = "Failed to update reminder."
+
+        self.draw_list_view()
+        self.load_reminders()

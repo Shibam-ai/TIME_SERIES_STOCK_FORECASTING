@@ -88,6 +88,32 @@ def delete_reminder(id_token, user_id, reminder_id):
         print(f"Error deleting reminder: {err.response.text}")
         return False
 
+def update_reminder(id_token, user_id, reminder_id, reminder_data):
+    """Updates a specific reminder in Firestore."""
+    url = f"{FIRESTORE_URL}/users/{user_id}/reminders/{reminder_id}"
+    headers = {"Authorization": f"Bearer {id_token}"}
+
+    try:
+        reminder_dt = datetime.datetime.strptime(reminder_data['reminder_time'], "%Y-%m-%d %H:%M")
+        timestamp_str = reminder_dt.isoformat() + "Z"
+    except (ValueError, KeyError):
+        print("Invalid or missing date format. Please use YYYY-MM-DD HH:MM")
+        return False
+
+    payload = {"fields": {
+        "title": {"stringValue": reminder_data.get('title', '')},
+        "description": {"stringValue": reminder_data.get('description', '')},
+        "reminder_time": {"timestampValue": timestamp_str}
+    }}
+
+    try:
+        r = requests.patch(url, headers=headers, json=payload)
+        r.raise_for_status()
+        return True
+    except requests.exceptions.HTTPError as err:
+        print(f"Error updating reminder: {err.response.text}")
+        return False
+
 def add_booking(id_token, user_id, booking_type, confirmation, departure, arrival):
     """Adds a new booking to Firestore using the REST API."""
     url = f"{FIRESTORE_URL}/users/{user_id}/bookings"
@@ -147,4 +173,33 @@ def delete_booking(id_token, user_id, booking_id):
         return True
     except requests.exceptions.HTTPError as err:
         print(f"Error deleting booking: {err.response.text}")
+        return False
+
+def update_booking(id_token, user_id, booking_id, booking_data):
+    """Updates a specific booking in Firestore."""
+    url = f"{FIRESTORE_URL}/users/{user_id}/bookings/{booking_id}"
+    headers = {"Authorization": f"Bearer {id_token}"}
+
+    try:
+        departure_dt = datetime.datetime.strptime(booking_data['departure_date'], "%Y-%m-%d %H:%M")
+        arrival_dt = datetime.datetime.strptime(booking_data['arrival_date'], "%Y-%m-%d %H:%M")
+        departure_ts = departure_dt.isoformat() + "Z"
+        arrival_ts = arrival_dt.isoformat() + "Z"
+    except (ValueError, KeyError):
+        print("Invalid or missing date format. Please use YYYY-MM-DD HH:MM")
+        return False
+
+    payload = {"fields": {
+        "booking_type": {"stringValue": booking_data.get('booking_type', '')},
+        "confirmation_number": {"stringValue": booking_data.get('confirmation_number', '')},
+        "departure_date": {"timestampValue": departure_ts},
+        "arrival_date": {"timestampValue": arrival_ts}
+    }}
+
+    try:
+        r = requests.patch(url, headers=headers, json=payload)
+        r.raise_for_status()
+        return True
+    except requests.exceptions.HTTPError as err:
+        print(f"Error updating booking: {err.response.text}")
         return False

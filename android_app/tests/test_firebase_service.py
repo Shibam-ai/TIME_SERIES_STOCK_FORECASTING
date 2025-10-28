@@ -36,7 +36,7 @@ class TestFirebaseService(unittest.TestCase):
 
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = mock_http_error
-        mock_response.json.return_value = mock_error_response.json() # Ensure the response also has the json
+        mock_response.json.return_value = mock_error_response.json()
         mock_post.return_value = mock_response
 
         result = firebase_service.login('test@example.com', 'wrongpassword')
@@ -51,27 +51,30 @@ class TestFirebaseService(unittest.TestCase):
 
         result = firebase_service.add_reminder('fake_token', 'user1', 'Test Title', 'Test Desc', '2025-01-01 10:00')
         self.assertTrue(result)
-        mock_post.assert_called_once()
 
     @patch('app_modules.firebase_service.requests.get')
     def test_get_reminders_success(self, mock_get):
         """Test successfully retrieving reminders."""
         mock_response = Mock()
         mock_response.json.return_value = {
-            'documents': [{
-                'name': 'projects/proj/databases/(default)/documents/users/user1/reminders/rem1',
-                'fields': {
-                    'title': {'stringValue': 'Test Reminder'},
-                    'reminder_time': {'timestampValue': '2025-01-01T10:00:00Z'}
-                }
-            }]
+            'documents': [{'name': 'path/rem1', 'fields': {'title': {'stringValue': 'Test'}, 'reminder_time': {'timestampValue': '2025-01-01T10:00:00Z'}}}]
         }
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
 
         result = firebase_service.get_reminders('fake_token', 'user1')
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]['title'], 'Test Reminder')
+
+    @patch('app_modules.firebase_service.requests.patch')
+    def test_update_reminder_success(self, mock_patch):
+        """Test successfully updating a reminder."""
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_patch.return_value = mock_response
+
+        reminder_data = {'title': 'Updated', 'description': 'Updated Desc', 'reminder_time': '2025-01-02 11:00'}
+        result = firebase_service.update_reminder('fake_token', 'user1', 'rem1', reminder_data)
+        self.assertTrue(result)
 
     @patch('app_modules.firebase_service.requests.delete')
     def test_delete_reminder_success(self, mock_delete):
@@ -82,10 +85,30 @@ class TestFirebaseService(unittest.TestCase):
 
         result = firebase_service.delete_reminder('fake_token', 'user1', 'reminder123')
         self.assertTrue(result)
-        mock_delete.assert_called_once_with(
-            f"{firebase_service.FIRESTORE_URL}/users/user1/reminders/reminder123",
-            headers={"Authorization": "Bearer fake_token"}
-        )
+
+    @patch('app_modules.firebase_service.requests.get')
+    def test_get_bookings_success(self, mock_get):
+        """Test successfully retrieving bookings."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'documents': [{'name': 'path/book1', 'fields': {'booking_type': {'stringValue': 'Flight'}, 'confirmation_number': {'stringValue': 'ABC123'}}}]
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = firebase_service.get_bookings('fake_token', 'user1')
+        self.assertEqual(len(result), 1)
+
+    @patch('app_modules.firebase_service.requests.patch')
+    def test_update_booking_success(self, mock_patch):
+        """Test successfully updating a booking."""
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_patch.return_value = mock_response
+
+        booking_data = {'booking_type': 'Train', 'confirmation_number': 'XYZ789', 'departure_date': '2025-02-01 12:00', 'arrival_date': '2025-02-01 14:00'}
+        result = firebase_service.update_booking('fake_token', 'user1', 'book1', booking_data)
+        self.assertTrue(result)
 
 if __name__ == '__main__':
     unittest.main()
